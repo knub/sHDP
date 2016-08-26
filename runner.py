@@ -131,7 +131,12 @@ def HDPRunner(args):
         predictions = np.argmax(HDP.states_list[-1].all_expected_stats[0], 1)
         all_topics_pred.append(predictions)
         all_topics_unique.extend(np.unique(predictions))
-        documents_topics_file.write(" ".join(predictions))
+        # print predictions
+        topics = predictions.tolist()
+        doc_length = len(topics)
+        counter = Counter(topics)
+        topic_proportions = [float(counter[k]) / doc_length for k in range(K)]
+        documents_topics_file.write(" ".join([str(f) for f in topic_proportions]))
         documents_topics_file.write("\n")
 
     documents_topics_file.close()
