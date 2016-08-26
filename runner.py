@@ -8,6 +8,7 @@ import csv
 import sys
 import pickle as pk
 import numpy as np
+import os
 from HDP import models
 from HDP.util.general import sgd_passes
 from HDP.util.text import progprint
@@ -18,7 +19,6 @@ results_path = project_path + 'results/'
 
 
 def HDPRunner(args):
-    num_dim = 50
     infseed = args['infSeed']  # 1
     K = args['Nmax']
     alpha = args['alpha']  # 1
@@ -26,28 +26,42 @@ def HDPRunner(args):
     tau = args['tau']
     kappa_sgd = args['kappa_sgd']
     mbsize = args['mbsize']
-    datasetname = args['dataset']
+    dataset = args['dataset']
 
-    results_file = results_path + datasetname + '/topics_infseed_' + str(infseed) + '_K_' + str(K) + \
-                   '_alpha_' + str(alpha) + '_gamma_' + str(gamma) + '_kappa_sgd_' + \
-                   str(kappa_sgd) + '_tau_' + str(tau) + '_mbsize_' + str(mbsize) + '.txt'
-    results_file_noncnt = results_path + datasetname + '/topics_noncnt_infseed_' + str(infseed) + '_K_' + str(K) + \
-                          '_alpha_' + str(alpha) + '_gamma_' + str(gamma) + '_kappa_sgd_' + \
-                          str(kappa_sgd) + '_tau_' + str(tau) + '_mbsize_' + str(mbsize) + '.txt'
+    results_folder = "results/%s/infseed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
+        dataset,
+        infseed,
+        K,
+        str(float(alpha)).replace(".", "-"),
+        str(float(gamma)).replace(".", "-"),
+        str(float(kappa_sgd)).replace(".", "-"),
+        str(float(tau)).replace(".", "-"),
+        mbsize
+    )
+    try:
+        os.mkdir(results_folder)
+    except:
+        pass
+    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
+    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
+    documents_topics_file = open("%s/document-topics" % results_folder, "wb")
 
-    ################# Data generatati
-    temp_file = open(project_path + 'data/' + datasetname + '/texts.pk', 'rb')
+    ################# Data generation
+    temp_file = open(project_path + 'data/' + dataset + '/texts.pk', 'rb')
     texts = pk.load(temp_file)
+    # print len(texts)
+    # print texts[0]
     temp_file.close()
 
     print 'Loading the glove dict file....'
     csv.field_size_limit(sys.maxsize)
-    vectors_file = open(project_path + 'data/' + datasetname + '/wordvec.pk', 'rb')
+    vectors_file = open(project_path + 'data/' + dataset + '/wordvec.pk', 'rb')
     vectors_dict = pk.load(vectors_file)
+    num_dim = len(vectors_dict["word"])
+
+    # TODO: normalize word vectors to size 1
 
     ########### Runner
-
-    print 'Main runner ...'
 
     def glovize_data(list_of_texts):
         all_data = []
@@ -108,7 +122,7 @@ def HDPRunner(args):
 
     ############# Add data and do mean field
 
-    ###count based topics
+    ### count based topics
     all_topics_pred = []
     all_topics_unique = []
     for i in range(num_docs):
@@ -117,6 +131,10 @@ def HDPRunner(args):
         predictions = np.argmax(HDP.states_list[-1].all_expected_stats[0], 1)
         all_topics_pred.append(predictions)
         all_topics_unique.extend(np.unique(predictions))
+        documents_topics_file.write(" ".join(predictions))
+        documents_topics_file.write("\n")
+
+    documents_topics_file.close()
 
     unique_topics = np.unique(all_topics_unique)
     topics_dict = {}
@@ -131,16 +149,15 @@ def HDPRunner(args):
         print topics_dict[t]
 
     # now there is a dictionary
-    topic_file = open(results_file, 'wb')
     for t in unique_topics:
         if len(topics_dict[t]) > 5:
             top_ordered_words = topics_dict[t][:20]
             # print top_ordered_words
-            topic_file.write(' '.join([i[0] for i in top_ordered_words]))
-            topic_file.write('\n')
-    topic_file.close()
+            count_based_topics_file.write(' '.join([i[0] for i in top_ordered_words]))
+            count_based_topics_file.write('\n')
+    count_based_topics_file.close()
 
-    ###prob based topics
+    ### prob based topics
     topics_dict = {}
     for j in range(K):
         topics_dict[j] = {}
@@ -161,13 +178,12 @@ def HDPRunner(args):
         sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:20])
         print sorted_topics_dict[-1]
 
-    topic_file = open(results_file_noncnt, 'wb')
     for t in range(K):
         if len(sorted_topics_dict[t]) > 5:
             top_ordered_words = sorted_topics_dict[t][:20]
-            topic_file.write(' '.join([i[0] for i in top_ordered_words]))
-            topic_file.write('\n')
-    topic_file.close()
+            prob_based_topics_file.write(' '.join([i[0] for i in top_ordered_words]))
+            prob_based_topics_file.write('\n')
+    prob_based_topics_file.close()
 
 
 if __name__ == '__main__':
