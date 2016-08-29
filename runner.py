@@ -1,65 +1,109 @@
 #!/usr/bin/env python2.7
 
 import argparse
+import csv
+import operator
+import os
+import pickle as pk
+import sys
 from argparse import RawTextHelpFormatter
 from collections import Counter
-from core.distributions import vonMisesFisherLogNormal
-import csv
-import sys
-import pickle as pk
+
 import numpy as np
-import os
+from sklearn.preprocessing import normalize
+
 from HDP import models
 from HDP.util.general import sgd_passes
 from HDP.util.text import progprint
-import operator
+from core.distributions import vonMisesFisherLogNormal
 
 project_path = ''
 results_path = project_path + 'results/'
 
 
-def HDPRunner(args):
-    infseed = args['infSeed']  # 1
-    K = args['Nmax']
-    alpha = args['alpha']  # 1
-    gamma = args['gamma']  # 2
-    tau = args['tau']
-    kappa_sgd = args['kappa_sgd']
-    mbsize = args['mbsize']
-    dataset = args['dataset']
+def read_corpus(args):
+    print "Reading vocabulary"
+    with open(args.vocabulary, "r") as f:
+        vocab = [l.rstrip() for l in f.readlines()]
 
-    results_folder = "results/%s/infseed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
+    def normalize_to_unit_length(a):
+        a = np.array(a)
+        a = a.reshape(1, -1)
+        a = normalize(a)
+        a = a.reshape(-1)
+        return a
+
+    print "Reading embedding model"
+    with open(args.embedding_model, "r") as f:
+        embeddings = [l.rstrip() for l in f.readlines()]
+        embeddings = [l.split(" ") for l in embeddings]
+        print "Floating"
+        embeddings = [[float(s) for s in split] for split in embeddings]
+        print "Normalizing"
+        embeddings = [normalize_to_unit_length(e) for e in embeddings]
+
+    print "Nr. embeddings: %d, Nr. words in vocabulary: %d" % (len(embeddings), len(vocab))
+    assert len(embeddings) == len(vocab), "sizes should match"
+    embeddings = dict(zip(vocab, embeddings))
+
+    print "Reading corpus"
+    corpus = []
+    current_doc = []
+    line_nr = 0
+    with open(args.corpus, "r") as f:
+        for line in f:
+            line = line.rstrip()
+            if line == "##":
+                if len(current_doc) > 0:
+                    corpus.append(current_doc)
+                    current_doc = []
+                else:
+                    print "empty document at line " + line_nr
+            else:
+                word_id = int(line[:6])
+                # topic_id = int(line[7:])
+                current_doc.append(word_id)
+                # topics.add(topicId)
+            line_nr += 1
+
+        corpus = [[vocab[i] for i in doc] for doc in corpus]
+        corpus = [Counter(doc) for doc in corpus]
+        corpus = [list(doc.iteritems()) for doc in corpus]
+
+    return corpus, embeddings
+
+
+def HDPRunner(args):
+    seed = args.seed
+    K = args.K
+    alpha = args.alpha
+    gamma = args.gamma
+    tau = args.tau
+    kappa_sgd = args.kappa_sgd
+    multibatch_size = args.multibatch_size
+    dataset = "20news"
+
+    results_folder = "results/%s/seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
         dataset,
-        infseed,
+        seed,
         K,
         str(float(alpha)).replace(".", "-"),
         str(float(gamma)).replace(".", "-"),
         str(float(kappa_sgd)).replace(".", "-"),
         str(float(tau)).replace(".", "-"),
-        mbsize
+        multibatch_size
     )
     try:
         os.mkdir(results_folder)
-    except:
+    except Exception:
         pass
     count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
     prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
     documents_topics_file = open("%s/document-topics" % results_folder, "wb")
 
     ################# Data generation
-    temp_file = open(project_path + 'data/' + dataset + '/texts.pk', 'rb')
-    texts = pk.load(temp_file)
-    # print len(texts)
-    # print texts[0]
-    temp_file.close()
-
-    print 'Loading the glove dict file....'
-    csv.field_size_limit(sys.maxsize)
-    vectors_file = open(project_path + 'data/' + dataset + '/wordvec.pk', 'rb')
-    vectors_dict = pk.load(vectors_file)
+    texts, vectors_dict = read_corpus(args)
     num_dim = len(vectors_dict["word"])
-
-    # TODO: normalize word vectors to size 1
 
     ########### Runner
 
@@ -67,11 +111,15 @@ def HDPRunner(args):
         all_data = []
         for text in list_of_texts:
             temp_list = []
-            for word in text:
-                try:
-                    temp_list.append((np.array(vectors_dict[word[0]]).astype(float), word[1]))
-                except:
+            for word, count in text:
+                if word in vectors_dict:
                     pass
+                elif word.capitalize() in vectors_dict:
+                    word = word.capitalize()
+                elif word.upper() in vectors_dict:
+                    word = word.upper()
+
+                temp_list.append((np.array(vectors_dict[word]).astype(float), count))
             all_data.append(np.array(temp_list))
         return all_data
 
@@ -81,12 +129,16 @@ def HDPRunner(args):
         for text in list_of_texts:
             temp_list = []
             temp_list_words = []
-            for word in text:
-                try:
-                    temp_list.append((np.array(vectors_dict[word[0]]).astype(float), word[1]))
-                    temp_list_words.append(word[0])
-                except:
+            for word, count in text:
+                if word in vectors_dict:
                     pass
+                elif word.capitalize() in vectors_dict:
+                    word = word.capitalize()
+                elif word.upper() in vectors_dict:
+                    word = word.upper()
+
+                temp_list.append((np.array(vectors_dict[word]).astype(float), count))
+                temp_list_words.append(word)
             all_data.append(np.array(temp_list))
             all_avail_words.append(np.array(temp_list_words))
         return all_data, all_avail_words
@@ -107,7 +159,7 @@ def HDPRunner(args):
         for w in d:
             all_words.append(w[0])
 
-    np.random.seed(infseed)
+    np.random.seed(seed)
 
     d = np.random.rand(num_dim, )
     d = d / np.linalg.norm(d)
@@ -116,7 +168,7 @@ def HDPRunner(args):
 
     HDP = models.HDP(alpha=alpha, gamma=gamma, obs_distns=components, num_docs=num_docs + 1)
 
-    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=real_data, minibatchsize=mbsize, npasses=1)
+    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=real_data, minibatchsize=multibatch_size, npasses=1)
     for t, (data, rho_t) in progprint(enumerate(sgdseq)):
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(training_size), rho_t)
 
@@ -191,23 +243,27 @@ def HDPRunner(args):
     prob_based_topics_file.close()
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="""This program runs sHDP on a prepared corpus.
-    sample argument setting is as follows:
-    python runner.py -is 1 -alpha 1 -gamma 2 -Nmax 40 -kappa_sgd 0.6 -tau 0.8 -mbsize 10 -dataset nips
-    """, formatter_class=RawTextHelpFormatter)
-    parser.add_argument('-is', '--infSeed', help='Seed for running the model', type=np.int32, required=True)
+def main():
+    parser = argparse.ArgumentParser(description="""This program runs sHDP on a prepared corpus.""",
+                                     formatter_class=RawTextHelpFormatter)
+    parser.add_argument('-embedding-model', type=str, required=True)
+    parser.add_argument('-corpus', type=str, required=True)
+    parser.add_argument('-vocabulary', type=str, required=True)
+    parser.add_argument('-seed', help='Seed for running the model', type=np.int32, required=True)
     parser.add_argument('-alpha', '--alpha', help='alpha hyperparameter for the low level stick breaking process',
                         type=np.float,
                         required=True)
     parser.add_argument('-gamma', '--gamma', help='gamma hyperparameter for the top level stick breaking process',
                         type=np.float, required=True)
-    parser.add_argument('-Nmax', '--Nmax', help='maximum number of states',
+    parser.add_argument('-K', help='maximum number of states',
                         type=np.int32, required=True)
-    parser.add_argument('-kappa_sgd', '--kappa_sgd', help='kappa for SGD', type=np.float, required=True)
-    parser.add_argument('-tau', '--tau', help='tau for SGD', type=np.float, required=True)
-    parser.add_argument('-mbsize', '--mbsize', help='mbsize for SGD', type=np.float, required=True)
-    parser.add_argument('-dataset', '--dataset', help='choose one of nips 20news wiki', required=True)
-    args = vars(parser.parse_args())
-    print args
+    parser.add_argument('-kappa-sgd', help='kappa for SGD', type=np.float, required=True)
+    parser.add_argument('-tau', help='tau for SGD', type=np.float, required=True)
+    parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
+    args = parser.parse_args()
+    print vars(args)
     HDPRunner(args)
+
+
+if __name__ == '__main__':
+    main()
