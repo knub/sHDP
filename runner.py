@@ -22,7 +22,6 @@ results_path = project_path + 'results/'
 
 
 def read_corpus(args):
-    print "Reading vocabulary"
     with open(args.vocabulary, "r") as f:
         vocab = [l.rstrip() for l in f.readlines()]
 
@@ -33,20 +32,16 @@ def read_corpus(args):
         a = a.reshape(-1)
         return a
 
-    print "Reading embedding model"
     with open(args.embedding_model, "r") as f:
         embeddings = [l.rstrip() for l in f.readlines()]
         embeddings = [l.split(" ") for l in embeddings]
-        print "Floating"
         embeddings = [[float(s) for s in split] for split in embeddings]
-        print "Normalizing"
         embeddings = [normalize_to_unit_length(e) for e in embeddings]
 
     print "Nr. embeddings: %d, Nr. words in vocabulary: %d" % (len(embeddings), len(vocab))
     assert len(embeddings) == len(vocab), "sizes should match"
     embeddings = dict(zip(vocab, embeddings))
 
-    print "Reading corpus"
     corpus = []
     current_doc = []
     line_nr = 0
@@ -81,10 +76,14 @@ def HDPRunner(args):
     tau = args.tau
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
-    dataset = "20news"
 
-    results_folder = "results/%s/seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
-        dataset,
+    ################# Data generation
+    texts, vectors_dict = read_corpus(args)
+    num_dim = len(vectors_dict["word"])
+
+    results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
+        "20news",
+        num_dim,
         seed,
         K,
         str(float(alpha)).replace(".", "-"),
@@ -100,10 +99,6 @@ def HDPRunner(args):
     count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
     prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
     documents_topics_file = open("%s/document-topics" % results_folder, "wb")
-
-    ################# Data generation
-    texts, vectors_dict = read_corpus(args)
-    num_dim = len(vectors_dict["word"])
 
     ########### Runner
 
@@ -172,6 +167,8 @@ def HDPRunner(args):
     for t, (data, rho_t) in progprint(enumerate(sgdseq)):
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(training_size), rho_t)
 
+    print "Finished Training"
+
     ############# Add data and do mean field
 
     ### count based topics
@@ -192,6 +189,7 @@ def HDPRunner(args):
         documents_topics_file.write("\n")
 
     documents_topics_file.close()
+    print "Finshed document topics"
 
     unique_topics = np.unique(all_topics_unique)
     topics_dict = {}
@@ -213,6 +211,7 @@ def HDPRunner(args):
             count_based_topics_file.write(' '.join([i[0] for i in top_ordered_words]))
             count_based_topics_file.write('\n')
     count_based_topics_file.close()
+    print "Finshed count-based topics"
 
     ### prob based topics
     topics_dict = {}
@@ -229,8 +228,9 @@ def HDPRunner(args):
             for t in range(K):
                 topics_dict[t][word] += temp_exp[idw, t]
 
-    sorted_topics_dict = []
     print '################################'
+
+    sorted_topics_dict = []
     for t in range(K):
         sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:20])
         print sorted_topics_dict[-1]

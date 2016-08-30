@@ -139,7 +139,6 @@ class _HDPSVI(_HDPBase,ModelMeanFieldSVI):
 
         ## take a global step on the parameters
         self._meanfield_sgdstep_parameters(mb_states_list,minibatchfrac,stepsize)
-        print ""
     def _get_mb_states_list(self,minibatch,**kwargs):
         minibatch = minibatch if isinstance(minibatch,list) else [minibatch]
         mb_states_list = []
