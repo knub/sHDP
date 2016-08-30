@@ -149,7 +149,7 @@ def sample_vMF(theta, kappa,size=1):
 
     """
 
-    warn('Not sure about sampling vMF, use with caution!!!! ')
+    # warn('Not sure about sampling vMF, use with caution!!!! ')
     #print "kappa : ", kappa
     #print "norm direction :" , np.linalg.norm(theta)
     np.testing.assert_array_almost_equal( np.linalg.norm(theta) , 1 )

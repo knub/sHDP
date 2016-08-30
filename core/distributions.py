@@ -180,7 +180,7 @@ class _vonMisesFisherBase(object):
         num = (D/2.0 - 1.0)*np.log(kappa)
         denom = np.array( (D/2.0)*np.log(2.0*np.pi) + np.log( special.iv(D/2.0 - 1.0, kappa) )  )
         if np.any(np.isinf(denom)):
-            warn('switching to asymptotic regime for the infinity values !')
+            # warn('switching to asymptotic regime for the infinity values !')
             idx =  np.isinf(denom)
             denom[idx] = (D/2.0)*np.log(2.0*np.pi) + kappa[idx] - 0.5*np.log(2*np.pi*kappa[idx])
         return num - denom
@@ -295,7 +295,7 @@ class vonMisesFisherLogNormal(_vonMisesFisherBase, GibbsSampling, MeanField, Mea
         num = special.iv(D/2., concentr)
         denom = special.iv(D/2. - 1., concentr)
         if any( np.isinf([num,denom]) ):
-            warn( "switching to asymptotic  !")
+            # warn( "switching to asymptotic  !")
             # modified Bessel function in asymptotic converges to I_\nu(x) \approx  exp(x)/sqrt(2*pi*x)
             val = 1.0*direct
         else:
