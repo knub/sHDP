@@ -61,7 +61,7 @@ def read_corpus(args):
         embeddings = [[float(s) for s in split] for split in embeddings]
         embeddings = [normalize_to_unit_length(e) for e in embeddings]
 
-    print "Nr. embeddings: %d, Nr. words in vocabulary: %d" % (len(embeddings), len(vocab))
+    print "# embeddings: %d, # words in vocabulary: %d" % (len(embeddings), len(vocab))
     assert len(embeddings) == len(vocab), "sizes should match"
     embeddings = dict(zip(vocab, embeddings))
 
@@ -112,8 +112,8 @@ def HDPRunner(args):
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
 
-    # corpus_x, embeddings = read_corpus(args)
-    corpus, embeddings = read_other_corpus()
+    corpus, embeddings = read_corpus(args)
+    # corpus, embeddings_x = read_other_corpus()
     num_dim = len(embeddings["word"])
 
     results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
@@ -151,9 +151,6 @@ def HDPRunner(args):
     for data, rho_t in progprint(sgdseq):
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(num_docs), rho_t)
 
-    print "Finished Training"
-
-    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
 
     ############# Add data and do mean field
 
@@ -163,13 +160,18 @@ def HDPRunner(args):
 
     write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus)
 
-    ### prob based topics
+    print '################################'
+
+    write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder)
+
+
+def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder):
+    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
     topics_dict = {}
     for word in range(K):
         topics_dict[word] = {}
         for k in vocabulary:
             topics_dict[word][k] = 0
-
     for doc_nr, doc in enumerate(words_corpus):
         HDP.add_data(np.atleast_2d(embedding_corpus[doc_nr][0].squeeze()), doc_nr)
         HDP.states_list[-1].meanfieldupdate()
@@ -181,18 +183,17 @@ def HDPRunner(args):
                 except:
                     pass
 
-    print '################################'
-
     sorted_topics_dict = []
     for t in range(K):
-        sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:20])
-        print sorted_topics_dict[-1]
+        sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:10])
+        print [word for word, prob in sorted_topics_dict[-1]]
 
     for t in range(K):
         if len(sorted_topics_dict[t]) > 5:
             top_ordered_words = sorted_topics_dict[t][:20]
             prob_based_topics_file.write(' '.join([doc[0] for doc in top_ordered_words]))
             prob_based_topics_file.write('\n')
+
     prob_based_topics_file.close()
 
 
@@ -215,7 +216,6 @@ def write_count_based_topics(corpus_topic_predictions, results_folder, words_cor
             count_based_topics_file.write(' '.join([word for word, count in top_ordered_words]))
             count_based_topics_file.write('\n')
     count_based_topics_file.close()
-    print "Finshed count-based topics"
 
 
 def write_document_topics(K, corpus_topic_predictions, results_folder):
@@ -259,8 +259,23 @@ def main():
     parser.add_argument('-tau', help='tau for SGD', type=np.float, required=True)
     parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
     args = parser.parse_args()
-    print vars(args)
-    HDPRunner(args)
+
+    for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
+        for alpha in [0.5, 0.9, 1.0, 1.5, 10]:
+            for gamma in [0.5, 1.0, 1.5, 10]:
+                args.kappa_sgd = kappa
+                args.tau = tau
+                args.alpha = alpha
+                args.gamma = gamma
+                number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
+                print number_args
+                try:
+                    HDPRunner(args)
+                except Exception as e:
+                    print str(number_args) + " failed!"
+                    print e
+                print "-" * 100
+
 
 
 if __name__ == '__main__':
