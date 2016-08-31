@@ -24,7 +24,7 @@ def build_embedding_corpus(corpus, embeddings):
     corpus_embeddings = []
     words = []
     for doc in corpus:
-        temp_list = []
+        embeddings_doc = []
         words_doc = []
         for word, count in doc:
             if word in embeddings:
@@ -35,11 +35,11 @@ def build_embedding_corpus(corpus, embeddings):
                 word = word.upper()
 
             try:
-                temp_list.append((np.array(embeddings[word]).astype(float), count))
+                embeddings_doc.append((np.array(embeddings[word]).astype(float), count))
             except:
                 pass
             words_doc.append(word)
-        corpus_embeddings.append(np.array(temp_list))
+        corpus_embeddings.append(np.array(embeddings_doc))
         words.append(np.array(words_doc))
     return corpus_embeddings, words
 
@@ -104,7 +104,7 @@ def read_other_corpus(dataset="nips"):
 
 
 def HDPRunner(args):
-    seed = args.seed
+    np.random.seed(args.seed)
     K = args.K
     alpha = args.alpha
     gamma = args.gamma
@@ -112,18 +112,14 @@ def HDPRunner(args):
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
 
-    corpus_x, embeddings = read_corpus(args)
-    corpus, embeddings_x = read_other_corpus()
-    print "other embeddings norm"
-    for word in embeddings_x:
-        norm = np.linalg.norm(embeddings_x[word])
-        print norm
+    # corpus_x, embeddings = read_corpus(args)
+    corpus, embeddings = read_other_corpus()
     num_dim = len(embeddings["word"])
 
     results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
         "20news",
         num_dim,
-        seed,
+        args.seed,
         K,
         str(float(alpha)).replace(".", "-"),
         str(float(gamma)).replace(".", "-"),
@@ -137,95 +133,51 @@ def HDPRunner(args):
         pass
 
     ########### Runner
-    embedding_corpus, words = build_embedding_corpus(corpus, embeddings)
+    embedding_corpus, words_corpus = build_embedding_corpus(corpus, embeddings)
     embedding_corpus = zip(embedding_corpus, range(len(embedding_corpus)))
     num_docs = len(embedding_corpus)
-    words = words[:num_docs]
-    vocabulary = np.unique([j for i in words for j in i])
+    vocabulary = np.unique([word for doc in words_corpus for word in doc])
 
     print "{'num_docs': %d, 'num_dim': %d}" % (num_docs, num_dim)
 
-    training_size = num_docs
-    np.random.seed(seed)
-
     d = np.random.rand(num_dim)
     d = d / np.linalg.norm(d)
+
     obs_hypparams = dict(mu_0=d, C_0=1, m_0=2, sigma_0=0.25)
     components = [vonMisesFisherLogNormal(**obs_hypparams) for _ in range(K)]
-
     HDP = models.HDP(alpha=alpha, gamma=gamma, obs_distns=components, num_docs=num_docs + 1)
 
     sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=embedding_corpus, minibatchsize=multibatch_size, npasses=1)
-    for t, (data, rho_t) in progprint(enumerate(sgdseq)):
-        # print rho_t
-        HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(training_size), rho_t)
+    for data, rho_t in progprint(sgdseq):
+        HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(num_docs), rho_t)
 
     print "Finished Training"
 
-
-    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
     prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
-    documents_topics_file = open("%s/document-topics" % results_folder, "wb")
 
     ############# Add data and do mean field
 
-    all_topics_pred = []
-    all_topics_unique = []
-    for i in range(num_docs):
-        HDP.add_data(np.atleast_2d(embedding_corpus[i][0].squeeze()), i)
-        HDP.states_list[-1].meanfieldupdate()
-        predictions = np.argmax(HDP.states_list[-1].all_expected_stats[0], 1)
-        all_topics_pred.append(predictions)
-        all_topics_unique.extend(np.unique(predictions))
-        # print predictions
-        topics = predictions.tolist()
-        doc_length = len(topics)
-        counter = Counter(topics)
-        topic_proportions = [float(counter[k]) / doc_length for k in range(K)]
-        documents_topics_file.write(" ".join([str(f) for f in topic_proportions]))
-        documents_topics_file.write("\n")
+    corpus_topic_predictions = get_topic_predictions(HDP, embedding_corpus)
 
-    documents_topics_file.close()
-    print "Finshed document topics"
+    write_document_topics(K, corpus_topic_predictions, results_folder)
 
-    ### count based topics
-    unique_topics = np.unique(all_topics_unique)
-    topics_dict = {}
-    for j in unique_topics:
-        topics_dict[j] = []
-    for k in range(num_docs):
-        for kk in range(len(all_topics_pred[k])):
-            topics_dict[all_topics_pred[k][kk]].append(words[k][kk])
-
-    for t in unique_topics:
-        topics_dict[t] = Counter(topics_dict[t]).most_common(30)
-        print topics_dict[t]
-
-    # now there is a dictionary
-    for t in unique_topics:
-        if len(topics_dict[t]) > 5:
-            top_ordered_words = topics_dict[t][:20]
-            # print top_ordered_words
-            count_based_topics_file.write(' '.join([i[0] for i in top_ordered_words]))
-            count_based_topics_file.write('\n')
-    count_based_topics_file.close()
-    print "Finshed count-based topics"
+    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus)
 
     ### prob based topics
     topics_dict = {}
-    for j in range(K):
-        topics_dict[j] = {}
+    for word in range(K):
+        topics_dict[word] = {}
         for k in vocabulary:
-            topics_dict[j][k] = 0
+            topics_dict[word][k] = 0
 
-    for idx, doc in enumerate(words):
-        HDP.add_data(np.atleast_2d(embedding_corpus[idx][0].squeeze()), idx)
+    for doc_nr, doc in enumerate(words_corpus):
+        HDP.add_data(np.atleast_2d(embedding_corpus[doc_nr][0].squeeze()), doc_nr)
         HDP.states_list[-1].meanfieldupdate()
         temp_exp = HDP.states_list[-1].all_expected_stats[0]
-        for idw, word in enumerate(doc):
+        for word_nr, word in enumerate(doc):
             for t in range(K):
                 try:
-                    topics_dict[t][word] += temp_exp[idw, t]
+                    topics_dict[t][word] += temp_exp[word_nr, t]
                 except:
                     pass
 
@@ -239,9 +191,54 @@ def HDPRunner(args):
     for t in range(K):
         if len(sorted_topics_dict[t]) > 5:
             top_ordered_words = sorted_topics_dict[t][:20]
-            prob_based_topics_file.write(' '.join([i[0] for i in top_ordered_words]))
+            prob_based_topics_file.write(' '.join([doc[0] for doc in top_ordered_words]))
             prob_based_topics_file.write('\n')
     prob_based_topics_file.close()
+
+
+def write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus):
+    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
+    unique_topics = np.unique([item for sublist in corpus_topic_predictions for item in sublist])
+    topics_dict = {}
+    for topic_id in unique_topics:
+        topics_dict[topic_id] = []
+    for doc_nr in range(len(corpus_topic_predictions)):
+        for kk in range(len(corpus_topic_predictions[doc_nr])):
+            topics_dict[corpus_topic_predictions[doc_nr][kk]].append(words_corpus[doc_nr][kk])
+    for topic_id in unique_topics:
+        topics_dict[topic_id] = Counter(topics_dict[topic_id]).most_common(10)
+        print [word for word, count in topics_dict[topic_id]]
+    for topic_id in unique_topics:
+        if len(topics_dict[topic_id]) > 5:
+            top_ordered_words = topics_dict[topic_id][:20]
+            # print top_ordered_words
+            count_based_topics_file.write(' '.join([word for word, count in top_ordered_words]))
+            count_based_topics_file.write('\n')
+    count_based_topics_file.close()
+    print "Finshed count-based topics"
+
+
+def write_document_topics(K, corpus_topic_predictions, results_folder):
+    documents_topics_file = open("%s/document-topics" % results_folder, "wb")
+    for topic_predictions in corpus_topic_predictions:
+        doc_length = len(topic_predictions)
+        counter = Counter(topic_predictions)
+        topic_proportions = [float(counter[k]) / doc_length for k in range(K)]
+
+        documents_topics_file.write(" ".join([str(f) for f in topic_proportions]))
+        documents_topics_file.write("\n")
+    documents_topics_file.close()
+
+
+def get_topic_predictions(HDP, embedding_corpus):
+    corpus_topic_predictions = []
+    for doc in range(len(embedding_corpus)):
+        HDP.add_data(np.atleast_2d(embedding_corpus[doc][0].squeeze()), doc)
+        HDP.states_list[-1].meanfieldupdate()
+        topics = np.argmax(HDP.states_list[-1].all_expected_stats[0], 1).tolist()
+        corpus_topic_predictions.append(topics)
+
+    return corpus_topic_predictions
 
 
 def main():
