@@ -20,6 +20,29 @@ from core.distributions import vonMisesFisherLogNormal
 project_path = ''
 results_path = project_path + 'results/'
 
+def build_embedding_corpus(corpus, embeddings):
+    corpus_embeddings = []
+    words = []
+    for doc in corpus:
+        temp_list = []
+        words_doc = []
+        for word, count in doc:
+            if word in embeddings:
+                pass
+            elif word.capitalize() in embeddings:
+                word = word.capitalize()
+            elif word.upper() in embeddings:
+                word = word.upper()
+
+            try:
+                temp_list.append((np.array(embeddings[word]).astype(float), count))
+            except:
+                pass
+            words_doc.append(word)
+        corpus_embeddings.append(np.array(temp_list))
+        words.append(np.array(words_doc))
+    return corpus_embeddings, words
+
 
 def read_corpus(args):
     with open(args.vocabulary, "r") as f:
@@ -89,9 +112,12 @@ def HDPRunner(args):
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
 
-    ################# Data generation
-    # corpus, embeddings = read_corpus(args)
-    corpus, embeddings = read_other_corpus()
+    corpus_x, embeddings = read_corpus(args)
+    corpus, embeddings_x = read_other_corpus()
+    print "other embeddings norm"
+    for word in embeddings_x:
+        norm = np.linalg.norm(embeddings_x[word])
+        print norm
     num_dim = len(embeddings["word"])
 
     results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
@@ -109,93 +135,44 @@ def HDPRunner(args):
         os.mkdir(results_folder)
     except Exception:
         pass
-    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
-    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
-    documents_topics_file = open("%s/document-topics" % results_folder, "wb")
 
     ########### Runner
-
-    def glovize_data(list_of_texts):
-        all_data = []
-        for text in list_of_texts:
-            temp_list = []
-            for word, count in text:
-                if word in embeddings:
-                    pass
-                elif word.capitalize() in embeddings:
-                    word = word.capitalize()
-                elif word.upper() in embeddings:
-                    word = word.upper()
-
-                try:
-                    temp_list.append((np.array(embeddings[word]).astype(float), count))
-                except:
-                    pass
-            all_data.append(np.array(temp_list))
-        return all_data
-
-    def glovize_data_wo_count(list_of_texts):
-        all_data = []
-        all_avail_words = []
-        for text in list_of_texts:
-            temp_list = []
-            temp_list_words = []
-            for word, count in text:
-                if word in embeddings:
-                    pass
-                elif word.capitalize() in embeddings:
-                    word = word.capitalize()
-                elif word.upper() in embeddings:
-                    word = word.upper()
-
-                try:
-                    temp_list.append((np.array(embeddings[word]).astype(float), count))
-                except:
-                    pass
-                temp_list_words.append(word)
-            all_data.append(np.array(temp_list))
-            all_avail_words.append(np.array(temp_list_words))
-        return all_data, all_avail_words
-
-    temp1 = glovize_data(corpus)
-    temp2 = glovize_data_wo_count(corpus)[0]
-    temp2 = zip(temp2, range(len(temp2)))
-    real_data = temp2[:]
-    num_docs = len(real_data)
-    temp_words = glovize_data_wo_count(corpus)[1]
-    temp_words = temp_words[:num_docs]
-    vocabulary = np.unique([j for i in temp_words for j in i])
+    embedding_corpus, words = build_embedding_corpus(corpus, embeddings)
+    embedding_corpus = zip(embedding_corpus, range(len(embedding_corpus)))
+    num_docs = len(embedding_corpus)
+    words = words[:num_docs]
+    vocabulary = np.unique([j for i in words for j in i])
 
     print "{'num_docs': %d, 'num_dim': %d}" % (num_docs, num_dim)
 
     training_size = num_docs
-    all_words = []
-    for d in temp1:
-        for w in d:
-            all_words.append(w[0])
-
     np.random.seed(seed)
 
-    d = np.random.rand(num_dim, )
+    d = np.random.rand(num_dim)
     d = d / np.linalg.norm(d)
     obs_hypparams = dict(mu_0=d, C_0=1, m_0=2, sigma_0=0.25)
-    components = [vonMisesFisherLogNormal(**obs_hypparams) for itr in range(K)]
+    components = [vonMisesFisherLogNormal(**obs_hypparams) for _ in range(K)]
 
     HDP = models.HDP(alpha=alpha, gamma=gamma, obs_distns=components, num_docs=num_docs + 1)
 
-    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=real_data, minibatchsize=multibatch_size, npasses=1)
+    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=embedding_corpus, minibatchsize=multibatch_size, npasses=1)
     for t, (data, rho_t) in progprint(enumerate(sgdseq)):
+        # print rho_t
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(training_size), rho_t)
 
     print "Finished Training"
 
+
+    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
+    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
+    documents_topics_file = open("%s/document-topics" % results_folder, "wb")
+
     ############# Add data and do mean field
 
-    ### count based topics
     all_topics_pred = []
     all_topics_unique = []
     for i in range(num_docs):
-        HDP.add_data(np.atleast_2d(real_data[i][0].squeeze()), i)
+        HDP.add_data(np.atleast_2d(embedding_corpus[i][0].squeeze()), i)
         HDP.states_list[-1].meanfieldupdate()
         predictions = np.argmax(HDP.states_list[-1].all_expected_stats[0], 1)
         all_topics_pred.append(predictions)
@@ -211,13 +188,14 @@ def HDPRunner(args):
     documents_topics_file.close()
     print "Finshed document topics"
 
+    ### count based topics
     unique_topics = np.unique(all_topics_unique)
     topics_dict = {}
     for j in unique_topics:
         topics_dict[j] = []
     for k in range(num_docs):
         for kk in range(len(all_topics_pred[k])):
-            topics_dict[all_topics_pred[k][kk]].append(temp_words[k][kk])
+            topics_dict[all_topics_pred[k][kk]].append(words[k][kk])
 
     for t in unique_topics:
         topics_dict[t] = Counter(topics_dict[t]).most_common(30)
@@ -240,8 +218,8 @@ def HDPRunner(args):
         for k in vocabulary:
             topics_dict[j][k] = 0
 
-    for idx, doc in enumerate(temp_words):
-        HDP.add_data(np.atleast_2d(real_data[idx][0].squeeze()), idx)
+    for idx, doc in enumerate(words):
+        HDP.add_data(np.atleast_2d(embedding_corpus[idx][0].squeeze()), idx)
         HDP.states_list[-1].meanfieldupdate()
         temp_exp = HDP.states_list[-1].all_expected_stats[0]
         for idw, word in enumerate(doc):

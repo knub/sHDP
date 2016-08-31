@@ -23,7 +23,8 @@ def progprint_xrange(*args,**kwargs):
     xr = xrange(*args)
     return progprint(xr,total=len(xr),**kwargs)
 
-def progprint(iterator,total=None,perline=25,show_times=True):
+
+def progprint(iterator, total=None, perline=25, show_times=True):
     times = []
     idx = 0
     if total is not None:
@@ -32,7 +33,6 @@ def progprint(iterator,total=None,perline=25,show_times=True):
         prev_time = time.time()
         yield thing
         times.append(time.time() - prev_time)
-        sys.stdout.write('.')
         if (idx+1) % perline == 0:
             if show_times:
                 avgtime = np.mean(times)
