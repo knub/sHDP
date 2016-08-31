@@ -68,6 +68,18 @@ def read_corpus(args):
     return corpus, embeddings
 
 
+def read_other_corpus(dataset="nips"):
+    temp_file = open('data/' + dataset + '/texts.pk', 'rb')
+    corpus = pk.load(temp_file)
+    temp_file.close()
+
+    csv.field_size_limit(sys.maxsize)
+    vectors_file = open('data/' + dataset + '/wordvec.pk', 'rb')
+    embeddings = pk.load(vectors_file)
+
+    return corpus, embeddings
+
+
 def HDPRunner(args):
     seed = args.seed
     K = args.K
@@ -78,8 +90,9 @@ def HDPRunner(args):
     multibatch_size = args.multibatch_size
 
     ################# Data generation
-    texts, vectors_dict = read_corpus(args)
-    num_dim = len(vectors_dict["word"])
+    # corpus, embeddings = read_corpus(args)
+    corpus, embeddings = read_other_corpus()
+    num_dim = len(embeddings["word"])
 
     results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
         "20news",
@@ -107,14 +120,17 @@ def HDPRunner(args):
         for text in list_of_texts:
             temp_list = []
             for word, count in text:
-                if word in vectors_dict:
+                if word in embeddings:
                     pass
-                elif word.capitalize() in vectors_dict:
+                elif word.capitalize() in embeddings:
                     word = word.capitalize()
-                elif word.upper() in vectors_dict:
+                elif word.upper() in embeddings:
                     word = word.upper()
 
-                temp_list.append((np.array(vectors_dict[word]).astype(float), count))
+                try:
+                    temp_list.append((np.array(embeddings[word]).astype(float), count))
+                except:
+                    pass
             all_data.append(np.array(temp_list))
         return all_data
 
@@ -125,28 +141,32 @@ def HDPRunner(args):
             temp_list = []
             temp_list_words = []
             for word, count in text:
-                if word in vectors_dict:
+                if word in embeddings:
                     pass
-                elif word.capitalize() in vectors_dict:
+                elif word.capitalize() in embeddings:
                     word = word.capitalize()
-                elif word.upper() in vectors_dict:
+                elif word.upper() in embeddings:
                     word = word.upper()
 
-                temp_list.append((np.array(vectors_dict[word]).astype(float), count))
+                try:
+                    temp_list.append((np.array(embeddings[word]).astype(float), count))
+                except:
+                    pass
                 temp_list_words.append(word)
             all_data.append(np.array(temp_list))
             all_avail_words.append(np.array(temp_list_words))
         return all_data, all_avail_words
 
-    temp1 = glovize_data(texts)
-    temp2 = glovize_data_wo_count(texts)[0]
+    temp1 = glovize_data(corpus)
+    temp2 = glovize_data_wo_count(corpus)[0]
     temp2 = zip(temp2, range(len(temp2)))
     real_data = temp2[:]
     num_docs = len(real_data)
-    print 'num_docs', num_docs
-    temp_words = glovize_data_wo_count(texts)[1]
+    temp_words = glovize_data_wo_count(corpus)[1]
     temp_words = temp_words[:num_docs]
     vocabulary = np.unique([j for i in temp_words for j in i])
+
+    print "{'num_docs': %d, 'num_dim': %d}" % (num_docs, num_dim)
 
     training_size = num_docs
     all_words = []
@@ -226,7 +246,10 @@ def HDPRunner(args):
         temp_exp = HDP.states_list[-1].all_expected_stats[0]
         for idw, word in enumerate(doc):
             for t in range(K):
-                topics_dict[t][word] += temp_exp[idw, t]
+                try:
+                    topics_dict[t][word] += temp_exp[idw, t]
+                except:
+                    pass
 
     print '################################'
 
