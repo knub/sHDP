@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+from datetime import datetime
 import operator
 import os
 import pickle as pk
@@ -132,10 +133,9 @@ def HDPRunner(args):
     )
     try:
         os.mkdir(results_folder)
-    except OSError as e:
+    except OSError:
         if os.path.exists(results_folder + "/count-based.topics"):
-            print "Folder already exists, stopping: " + str(e)
-            return
+            raise Exception("folder already exists")
 
     with open(results_folder + "/args.txt", "w") as args_file:
         args_file.write(str(vars(args)) + "\n")
@@ -166,7 +166,7 @@ def HDPRunner(args):
     corpus_topic_predictions = get_topic_predictions(HDP, embedding_corpus)
 
     write_document_topics(K, corpus_topic_predictions, results_folder)
-    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus, log_file)
+    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus)
     log_file.write('################################\n')
     write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder)
     log_file.close()
@@ -260,14 +260,14 @@ def run_shdp(params, args):
     args.alpha = alpha
     args.gamma = gamma
     number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
-    print number_args
+    print str(datetime.now()) + ": " + str(number_args)
     sys.stdout.flush()
     try:
         HDPRunner(args)
-        print str(number_args) + " finished!"
+        print str(datetime.now()) + ": " + str(number_args) + " finished!"
         sys.stdout.flush()
     except Exception as e:
-        print str(number_args) + " failed: " + str(e)
+        print str(datetime.now()) + ": " + str(number_args) + " failed: " + str(e)
         sys.stdout.flush()
 
 
