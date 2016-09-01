@@ -10,6 +10,7 @@ from argparse import RawTextHelpFormatter
 from collections import Counter
 from multiprocessing import Pool
 from functools import partial
+from time import time
 
 import numpy as np
 from sklearn.preprocessing import normalize
@@ -105,6 +106,7 @@ def read_other_corpus(dataset="nips"):
 
 
 def HDPRunner(args):
+    start_time = time()
     np.random.seed(args.seed)
     K = args.K
     alpha = args.alpha
@@ -135,6 +137,8 @@ def HDPRunner(args):
             print "Folder already exists, stopping: " + str(e)
             return
 
+    with open(results_folder + "/args.txt", "w") as args_file:
+        args_file.write(str(vars(args)) + "\n")
     log_file = open(results_folder + "/log", "w")
 
     ########### Runner
@@ -166,6 +170,12 @@ def HDPRunner(args):
     log_file.write('################################\n')
     write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder)
     log_file.close()
+
+    end_time = time()
+    duration = int(end_time - start_time)
+
+    with open(results_folder + "/runtime.txt", "w") as runtime_file:
+        runtime_file.write(str(duration) + "\n")
 
 def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder):
     prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
@@ -251,11 +261,14 @@ def run_shdp(params, args):
     args.gamma = gamma
     number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
     print number_args
+    sys.stdout.flush()
     try:
         HDPRunner(args)
         print str(number_args) + " finished!"
+        sys.stdout.flush()
     except Exception as e:
         print str(number_args) + " failed: " + str(e)
+        sys.stdout.flush()
 
 
 def main():
