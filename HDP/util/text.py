@@ -19,12 +19,7 @@ def sec2str(seconds):
     else:
         return '%0.2f' % seconds
 
-def progprint_xrange(*args,**kwargs):
-    xr = xrange(*args)
-    return progprint(xr,total=len(xr),**kwargs)
-
-
-def progprint(iterator, total=None, perline=25, show_times=True):
+def progprint(iterator, log_file, total=None, perline=25, show_times=True):
     times = []
     idx = 0
     if total is not None:
@@ -38,20 +33,19 @@ def progprint(iterator, total=None, perline=25, show_times=True):
                 avgtime = np.mean(times)
                 if total is not None:
                     eta = sec2str(avgtime*(total-(idx+1)))
-                    sys.stdout.write((
+                    log_file.write((
                         '  [ %%%dd/%%%dd, %%7.2fsec avg, ETA %%s ]\n'
                                 % (numdigits,numdigits)) % (idx+1,total,avgtime,eta))
                 else:
-                    sys.stdout.write('  [ %d done, %7.2fsec avg ]\n' % (idx+1,avgtime))
+                    log_file.write('  [ %d done, %7.2fsec avg ]\n' % (idx+1,avgtime))
             else:
                 if total is not None:
-                    sys.stdout.write(('  [ %%%dd/%%%dd ]\n' % (numdigits,numdigits) ) % (idx+1,total))
+                    log_file.write(('  [ %%%dd/%%%dd ]\n' % (numdigits,numdigits) ) % (idx+1,total))
                 else:
-                    sys.stdout.write('  [ %d ]\n' % (idx+1))
+                    log_file.write('  [ %d ]\n' % (idx+1))
         idx += 1
-        sys.stdout.flush()
-    print ''
+        log_file.flush()
     if show_times and len(times) > 0:
         total = sec2str(seconds=np.sum(times))
-        print '%7.2fsec avg, %s total\n' % (np.mean(times),total)
+        log_file.write('%7.2fsec avg, %s total\n' % (np.mean(times),total))
 

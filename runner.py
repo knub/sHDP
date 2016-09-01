@@ -129,8 +129,12 @@ def HDPRunner(args):
     )
     try:
         os.mkdir(results_folder)
-    except Exception:
-        pass
+    except OSError as e:
+        if os.path.exists(results_folder + "/count-based.topics"):
+            print "Folder already exists, stopping: " + str(e)
+            return
+
+    log_file = open(results_folder + "/log", "w")
 
     ########### Runner
     embedding_corpus, words_corpus = build_embedding_corpus(corpus, embeddings)
@@ -138,7 +142,7 @@ def HDPRunner(args):
     num_docs = len(embedding_corpus)
     vocabulary = np.unique([word for doc in words_corpus for word in doc])
 
-    print "{'num_docs': %d, 'num_dim': %d}" % (num_docs, num_dim)
+    log_file.write("{'num_docs': %d, 'num_dim': %d, 'num_embeddings': %d}\n" % (num_docs, num_dim, len(embeddings)))
 
     d = np.random.rand(num_dim)
     d = d / np.linalg.norm(d)
@@ -148,7 +152,7 @@ def HDPRunner(args):
     HDP = models.HDP(alpha=alpha, gamma=gamma, obs_distns=components, num_docs=num_docs + 1)
 
     sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=embedding_corpus, minibatchsize=multibatch_size, npasses=1)
-    for data, rho_t in progprint(sgdseq):
+    for data, rho_t in progprint(sgdseq, log_file):
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(num_docs), rho_t)
 
 
@@ -157,13 +161,10 @@ def HDPRunner(args):
     corpus_topic_predictions = get_topic_predictions(HDP, embedding_corpus)
 
     write_document_topics(K, corpus_topic_predictions, results_folder)
-
-    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus)
-
-    print '################################'
-
+    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus, log_file)
+    log_file.write('################################\n')
     write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder)
-
+    log_file.close()
 
 def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder):
     prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
@@ -186,7 +187,7 @@ def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, 
     sorted_topics_dict = []
     for t in range(K):
         sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:10])
-        print [word for word, prob in sorted_topics_dict[-1]]
+        # print [word for word, prob in sorted_topics_dict[-1]]
 
     for t in range(K):
         if len(sorted_topics_dict[t]) > 5:
