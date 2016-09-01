@@ -236,9 +236,16 @@ class vonMisesFisherLogNormal(_vonMisesFisherBase, GibbsSampling, MeanField, Mea
         self._gamma = self.C_mf 
         self._psi = self.mu_mf 
         
+        # previous_condition = (mu,kappa) == (None,None) and None not in (mu_0,C_0,m_0,sigma_0)
+        new_condition = mu is None and kappa is None and \
+            mu_0 is not None and \
+            C_0 is not None and \
+            m_0 is not None and \
+            sigma_0 is not None
 
+        # assert previous_condition == new_condition
 
-        if (mu,kappa) == (None,None) and None not in (mu_0,C_0,m_0,sigma_0):
+        if new_condition:
             #self.kappa = np.exp( self.m_0 + 0.5*self.sigma_0**2 )    # if it is None, I replace t with the average of the logNormal
             #self.mu = self.mu_0
             self.resample() # initialize from prior
