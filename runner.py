@@ -8,6 +8,8 @@ import pickle as pk
 import sys
 from argparse import RawTextHelpFormatter
 from collections import Counter
+from multiprocessing import Pool
+from functools import partial
 
 import numpy as np
 from sklearn.preprocessing import normalize
@@ -61,7 +63,6 @@ def read_corpus(args):
         embeddings = [[float(s) for s in split] for split in embeddings]
         embeddings = [normalize_to_unit_length(e) for e in embeddings]
 
-    print "# embeddings: %d, # words in vocabulary: %d" % (len(embeddings), len(vocab))
     assert len(embeddings) == len(vocab), "sizes should match"
     embeddings = dict(zip(vocab, embeddings))
 
@@ -242,6 +243,21 @@ def get_topic_predictions(HDP, embedding_corpus):
     return corpus_topic_predictions
 
 
+def run_shdp(params, args):
+    kappa, tau, alpha, gamma = params
+    args.kappa_sgd = kappa
+    args.tau = tau
+    args.alpha = alpha
+    args.gamma = gamma
+    number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
+    print number_args
+    try:
+        HDPRunner(args)
+        print str(number_args) + " finished!"
+    except Exception as e:
+        print str(number_args) + " failed: " + str(e)
+
+
 def main():
     parser = argparse.ArgumentParser(description="""This program runs sHDP on a prepared corpus.""",
                                      formatter_class=RawTextHelpFormatter)
@@ -261,23 +277,14 @@ def main():
     parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
     args = parser.parse_args()
 
+    params = []
     for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
         for alpha in [0.5, 0.9, 1.0, 1.5, 10]:
             for gamma in [0.5, 1.0, 1.5, 10]:
-                args.kappa_sgd = kappa
-                args.tau = tau
-                args.alpha = alpha
-                args.gamma = gamma
-                number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
-                print number_args
-                try:
-                    HDPRunner(args)
-                except Exception as e:
-                    print str(number_args) + " failed!"
-                    print e
-                print "-" * 100
+                params.append((kappa, tau, alpha, gamma))
 
-
+    p = Pool(5)
+    p.map(partial(run_shdp, args=args), params)
 
 if __name__ == '__main__':
     main()
