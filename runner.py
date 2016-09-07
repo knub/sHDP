@@ -21,6 +21,10 @@ from HDP.util.general import sgd_passes
 from HDP.util.text import progprint
 from core.distributions import vonMisesFisherLogNormal
 
+import mkl
+
+mkl.set_num_threads(4)
+
 project_path = ''
 results_path = project_path + 'results/'
 
@@ -116,11 +120,11 @@ def HDPRunner(args):
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
 
-    corpus, embeddings = read_corpus(args)
-    # corpus, embeddings_x = read_other_corpus()
+    corpus_x, embeddings = read_corpus(args)
+    corpus, embeddings_x = read_other_corpus()
     num_dim = len(embeddings["word"])
 
-    results_folder = "results/%s/dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
+    results_folder = "results/%s/embeddings-ours.dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
         "20news",
         num_dim,
         args.seed,
@@ -135,7 +139,7 @@ def HDPRunner(args):
         os.mkdir(results_folder)
     except OSError:
         if os.path.exists(results_folder + "/count-based.topics"):
-            raise Exception("folder already exists")
+            raise Exception("folder " + results_folder + " already exists")
 
     with open(results_folder + "/args.txt", "w") as args_file:
         args_file.write(str(vars(args)) + "\n")
@@ -290,14 +294,27 @@ def main():
     parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
     args = parser.parse_args()
 
-    params = []
-    for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
-        for alpha in [0.5, 0.9, 1.0, 1.5, 10]:
-            for gamma in [0.5, 1.0, 1.5, 10]:
-                params.append((kappa, tau, alpha, gamma))
+    orig_corpus = args.corpus
+    orig_vocabulary = args.vocabulary
+    orig_embeddings = args.embedding_model
 
-    p = Pool(5)
-    p.map(partial(run_shdp, args=args), params)
+    for dim in [200]:
+        args.vocabulary = orig_vocabulary.replace("dim-XXX", "dim-%d" % dim)
+        args.embedding_model = orig_embeddings.replace("dim-XXX", "dim-%d" % dim)
+        args.corpus = orig_corpus.replace("dim-XXX", "dim-%d" % dim)
+        print args.corpus
+        sys.stdout.flush()
+        HDPRunner(args)
+
+    # params = []
+    # for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
+    #     for alpha in [0.5, 0.9, 1.0, 1.5, 10]:
+    #         for gamma in [0.5, 1.0, 1.5, 10]:
+    #             params.append((kappa, tau, alpha, gamma))
+    #
+    # p = Pool(5)
+    # p.map(partial(run_shdp, args=args), params)
+    # HDPRunner(args)
 
 if __name__ == '__main__':
     main()
