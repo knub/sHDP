@@ -303,17 +303,18 @@ def main():
     parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
     args = parser.parse_args()
 
-    orig_corpus = args.corpus
-    orig_vocabulary = args.vocabulary
-    orig_embeddings = args.embedding_model
+    HDPRunner(args)
 
-    for dim in [200]:
-        args.vocabulary = orig_vocabulary.replace("dim-XXX", "dim-%d" % dim)
-        args.embedding_model = orig_embeddings.replace("dim-XXX", "dim-%d" % dim)
-        args.corpus = orig_corpus.replace("dim-XXX", "dim-%d" % dim)
-        print args.corpus
-        sys.stdout.flush()
-        HDPRunner(args)
+    # orig_corpus = args.corpus
+    # orig_vocabulary = args.vocabulary
+    # orig_embeddings = args.embedding_model
+    # for dim in [200]:
+    #     args.vocabulary = orig_vocabulary.replace("dim-XXX", "dim-%d" % dim)
+    #     args.embedding_model = orig_embeddings.replace("dim-XXX", "dim-%d" % dim)
+    #     args.corpus = orig_corpus.replace("dim-XXX", "dim-%d" % dim)
+    #     print args.corpus
+    #     sys.stdout.flush()
+    #     HDPRunner(args)
 
     # params = []
     # for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
