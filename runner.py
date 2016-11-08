@@ -1,6 +1,7 @@
 #!/usr/bin/env python2.7
 
 import argparse
+import traceback
 import csv
 from datetime import datetime
 import operator
@@ -286,21 +287,17 @@ def get_topic_predictions(HDP, embedding_corpus):
     return corpus_topic_predictions
 
 
-def run_shdp(params, args):
-    kappa, tau, alpha, gamma = params
-    args.kappa_sgd = kappa
-    args.tau = tau
-    args.alpha = alpha
-    args.gamma = gamma
-    number_args = {k: v for k,v in vars(args).iteritems() if "/" not in str(v)}
-    print str(datetime.now()) + ": " + str(number_args)
+def run_shdp(args):
+    s = "kappa=%f, tau=%f, alpha=%f, gamma=%f" % (args.kappa_sgd, args.tau, args.alpha, args.gamma)
+    print str(datetime.now()) + ": " + s
     sys.stdout.flush()
     try:
         HDPRunner(args)
-        print str(datetime.now()) + ": " + str(number_args) + " finished!"
+        print str(datetime.now()) + ": Finished " + s
         sys.stdout.flush()
     except Exception as e:
-        print str(datetime.now()) + ": " + str(number_args) + " failed: " + str(e)
+        print str(datetime.now()) + ": Failed " + s + " with " + str(e)
+        # traceback.print_exc()
         sys.stdout.flush()
 
 
@@ -327,13 +324,21 @@ def main():
     argses = []
     for corpus_orig in ["our", "their"]:
         for embedding_orig in ["our", "their"]:
-            a = copy.deepcopy(args)
-            a.corpus_orig = corpus_orig
-            a.embedding_orig = embedding_orig
-            argses.append(a)
+            for kappa, tau in [(0.6, 0.8), (0.505, 0.8), (0.6, 0.1), (0.6, 10), (0.6, 100)]:
+                for alpha in [0.5, 0.9, 1.0, 1.5, 10]:
+                    for gamma in [0.5, 1.0, 1.5, 10]:
+                        a = copy.deepcopy(args)
+                        a.corpus_orig = corpus_orig
+                        a.embedding_orig = embedding_orig
+
+                        a.kappa = kappa
+                        a.tau = tau
+                        a.alpha = alpha
+                        a.gamma = gamma
+                        argses.append(a)
 
     p = Pool(5)
-    p.map(HDPRunner, argses)
+    p.map(run_shdp, argses)
 
     # orig_corpus = args.corpus
     # orig_vocabulary = args.vocabulary
