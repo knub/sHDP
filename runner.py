@@ -124,8 +124,15 @@ def HDPRunner(args):
     corpus, embeddings_x = read_other_corpus()
     num_dim = len(embeddings["word"])
 
+    if "nips" in args.corpus:
+        corpus_name = "nips"
+    elif "20news" in args.corpus:
+        corpus_name = "20news"
+    else:
+        raise Exception("Corpus not known: " + args.corpus)
+
     results_folder = "results/%s/embeddings-ours.dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
-        "20news",
+        corpus_name,
         num_dim,
         args.seed,
         K,
