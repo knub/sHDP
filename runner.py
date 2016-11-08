@@ -327,12 +327,10 @@ def main():
     argses = []
     for corpus_orig in ["our", "their"]:
         for embedding_orig in ["our", "their"]:
-            for iterations in [1, 2, 3, 4, 5]:
-                a = copy.deepcopy(args)
-                a.corpus_orig = corpus_orig
-                a.embedding_orig = embedding_orig
-                a.iterations = iterations
-                argses.append(a)
+            a = copy.deepcopy(args)
+            a.corpus_orig = corpus_orig
+            a.embedding_orig = embedding_orig
+            argses.append(a)
 
     p = Pool(5)
     p.map(HDPRunner, argses)
