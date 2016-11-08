@@ -23,7 +23,7 @@ from core.distributions import vonMisesFisherLogNormal
 
 import mkl
 
-mkl.set_num_threads(4)
+mkl.set_num_threads(2)
 
 project_path = ''
 results_path = project_path + 'results/'
