@@ -253,7 +253,7 @@ def write_count_based_topics(corpus_topic_predictions, results_folder, words_cor
             topics_dict[corpus_topic_predictions[doc_nr][kk]].append(words_corpus[doc_nr][kk])
     for topic_id in unique_topics:
         topics_dict[topic_id] = Counter(topics_dict[topic_id]).most_common(top_words)
-        print [word for word, count in topics_dict[topic_id]]
+        # print [word for word, count in topics_dict[topic_id]]
     for topic_id in unique_topics:
         if len(topics_dict[topic_id]) > 5:
             top_ordered_words = topics_dict[topic_id][:top_words]
