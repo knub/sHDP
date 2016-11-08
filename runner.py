@@ -178,8 +178,10 @@ def HDPRunner(args):
 
     write_document_topics(K, corpus_topic_predictions, results_folder)
     write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus)
+    write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus, top_words=500)
     log_file.write('################################\n')
     write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder)
+    write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder, top_words=500)
     log_file.close()
 
     end_time = time()
@@ -188,8 +190,8 @@ def HDPRunner(args):
     with open(results_folder + "/runtime.txt", "w") as runtime_file:
         runtime_file.write(str(duration) + "\n")
 
-def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder):
-    prob_based_topics_file = open("%s/prob-based.topics" % results_folder, "wb")
+def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, results_folder, top_words=10):
+    prob_based_topics_file = open("%s/prob-based.%d.topics" % (results_folder, top_words), "wb")
     topics_dict = {}
     for word in range(K):
         topics_dict[word] = {}
@@ -208,20 +210,20 @@ def write_prob_based_topics(HDP, K, embedding_corpus, vocabulary, words_corpus, 
 
     sorted_topics_dict = []
     for t in range(K):
-        sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:10])
+        sorted_topics_dict.append(sorted(topics_dict[t].items(), key=operator.itemgetter(1), reverse=True)[:top_words])
         # print [word for word, prob in sorted_topics_dict[-1]]
 
     for t in range(K):
         if len(sorted_topics_dict[t]) > 5:
-            top_ordered_words = sorted_topics_dict[t][:20]
+            top_ordered_words = sorted_topics_dict[t][:top_words]
             prob_based_topics_file.write(' '.join([doc[0] for doc in top_ordered_words]))
             prob_based_topics_file.write('\n')
 
     prob_based_topics_file.close()
 
 
-def write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus):
-    count_based_topics_file = open("%s/count-based.topics" % results_folder, "wb")
+def write_count_based_topics(corpus_topic_predictions, results_folder, words_corpus, top_words=10):
+    count_based_topics_file = open("%s/count-based.%d.topics" % (results_folder, top_words), "wb")
     unique_topics = np.unique([item for sublist in corpus_topic_predictions for item in sublist])
     topics_dict = {}
     for topic_id in unique_topics:
@@ -230,11 +232,11 @@ def write_count_based_topics(corpus_topic_predictions, results_folder, words_cor
         for kk in range(len(corpus_topic_predictions[doc_nr])):
             topics_dict[corpus_topic_predictions[doc_nr][kk]].append(words_corpus[doc_nr][kk])
     for topic_id in unique_topics:
-        topics_dict[topic_id] = Counter(topics_dict[topic_id]).most_common(10)
+        topics_dict[topic_id] = Counter(topics_dict[topic_id]).most_common(top_words)
         print [word for word, count in topics_dict[topic_id]]
     for topic_id in unique_topics:
         if len(topics_dict[topic_id]) > 5:
-            top_ordered_words = topics_dict[topic_id][:20]
+            top_ordered_words = topics_dict[topic_id][:top_words]
             # print top_ordered_words
             count_based_topics_file.write(' '.join([word for word, count in top_ordered_words]))
             count_based_topics_file.write('\n')
