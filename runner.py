@@ -11,6 +11,7 @@ from argparse import RawTextHelpFormatter
 from collections import Counter
 from multiprocessing import Pool
 from functools import partial
+import copy
 from time import time
 
 import numpy as np
@@ -52,7 +53,7 @@ def build_embedding_corpus(corpus, embeddings):
     return corpus_embeddings, words
 
 
-def read_corpus(args):
+def read_our_corpus(args):
     with open(args.vocabulary, "r") as f:
         vocab = [l.rstrip() for l in f.readlines()]
 
@@ -98,7 +99,7 @@ def read_corpus(args):
     return corpus, embeddings
 
 
-def read_other_corpus(dataset="nips"):
+def read_their_corpus(dataset="nips"):
     temp_file = open('data/' + dataset + '/texts.pk', 'rb')
     corpus = pk.load(temp_file)
     temp_file.close()
@@ -119,10 +120,26 @@ def HDPRunner(args):
     tau = args.tau
     kappa_sgd = args.kappa_sgd
     multibatch_size = args.multibatch_size
+    iterations = args.iterations
 
-    corpus_x, embeddings = read_corpus(args)
-    corpus, embeddings_x = read_other_corpus()
+    corpus_our, embeddings_our = read_our_corpus(args)
+    corpus_their, embeddings_their = read_their_corpus()
+
+    if args.corpus_orig == "our":
+        corpus = corpus_our
+    elif args.corpus_orig == "their":
+        corpus = corpus_their
+    else:
+        raise Exception("Corpus not known: " + args.corpus_orig)
+    if args.embedding_orig == "our":
+        embeddings = embeddings_our
+    elif args.embedding_orig == "their":
+        embeddings = embeddings_their
+    else:
+        raise Exception("Corpus not known: " + args.embedding_orig)
+
     num_dim = len(embeddings["word"])
+    embedding_name = "nips.dim-" + str(num_dim) if "nips" in args.embedding_model else "dim-" + str(num_dim)
 
     if "nips" in args.corpus:
         corpus_name = "nips"
@@ -131,9 +148,12 @@ def HDPRunner(args):
     else:
         raise Exception("Corpus not known: " + args.corpus)
 
-    results_folder = "results/%s/embeddings-ours.dim-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
+    results_folder = "results/%s/corpus-%s.embeddings-%s.%s.iterations-%d.seed-%d.topics-%d.alpha-%s.gamma-%s.kappa-%s.tau-%s.batch-%d" % (
         corpus_name,
-        num_dim,
+        args.corpus_orig,
+        args.embedding_orig,
+        embedding_name,
+        iterations,
         args.seed,
         K,
         str(float(alpha)).replace(".", "-"),
@@ -167,7 +187,7 @@ def HDPRunner(args):
     components = [vonMisesFisherLogNormal(**obs_hypparams) for _ in range(K)]
     HDP = models.HDP(alpha=alpha, gamma=gamma, obs_distns=components, num_docs=num_docs + 1)
 
-    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=embedding_corpus, minibatchsize=multibatch_size, npasses=1)
+    sgdseq = sgd_passes(tau=tau, kappa=kappa_sgd, datalist=embedding_corpus, minibatchsize=multibatch_size, npasses=iterations)
     for data, rho_t in progprint(sgdseq, log_file):
         HDP.meanfield_sgdstep(data, np.array(data).shape[0] / np.float(num_docs), rho_t)
 
@@ -301,9 +321,21 @@ def main():
     parser.add_argument('-kappa-sgd', help='kappa for SGD', type=np.float, required=True)
     parser.add_argument('-tau', help='tau for SGD', type=np.float, required=True)
     parser.add_argument('-multibatch-size', help='mbsize for SGD', type=np.float, required=True)
+    parser.add_argument('-iterations', help='how many iterations to run', type=np.int32, required=True)
     args = parser.parse_args()
 
-    HDPRunner(args)
+    argses = []
+    for corpus_orig in ["our", "their"]:
+        for embedding_orig in ["our", "their"]:
+            for iterations in [1, 2, 3, 4, 5]:
+                a = copy.deepcopy(args)
+                a.corpus_orig = corpus_orig
+                a.embedding_orig = embedding_orig
+                a.iterations = iterations
+                argses.append(a)
+
+    p = Pool(5)
+    p.map(HDPRunner, argses)
 
     # orig_corpus = args.corpus
     # orig_vocabulary = args.vocabulary
